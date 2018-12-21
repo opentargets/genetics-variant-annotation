@@ -8,7 +8,11 @@ import hail as hl
 
 def main():
 
-    ht = hl.read_table('data/gnomad.genomes.head100k.r2.1.sites.ht')
+    ht = (
+        hl.read_table('data/gnomad.genomes.head100k.r2.1.sites.ht')
+          .split_multi()
+    )
+
     ht.describe()
     ht.show()
 
