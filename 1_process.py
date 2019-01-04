@@ -12,9 +12,11 @@ def main():
     # Args
     hail_table = 'data/gnomad.genomes.head100k.r2.1.sites.ht'
     chain_file = 'data/grch37_to_grch38.over.chain.gz'
+    cadd_table = 'prepare_extra_datasets/CADD_v1.4_GRCh37/temp/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht' # genetics-portal-staging/variant-annotation/extra_datasets/CADD_v1.4_GRCh37/output/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht
     populations = ['controls_afr', 'controls_amr', 'controls_eas',
                    'controls_nfe']
-    maf_filter = 0.001
+    maf_filter = 0.001 # 0.1%
+    # maf_filter = 0
 
     #
     # Load ---------------------------------------------------------------------
@@ -23,11 +25,20 @@ def main():
     # Load data
     ht = (
         hl.read_table(hail_table)
-          .head(1000) # DEBUG
+          .head(100) # DEBUG
     )
 
     # Assert that all alleles are biallelic
     assert(ht.all(ht.alleles.length() == 2))
+
+    #
+    # Remove variants not passing hard or soft filters -------------------------
+    # https://macarthurlab.org/2018/10/17/gnomad-v2-1/
+    #
+
+    print('Variants pre-quality filter: ', ht.count())
+    ht = ht.filter(ht.filters.length() == 0)
+    print('Variants post-quality filter: ', ht.count())
 
     #
     # Filter based on allele frequency -----------------------------------------
@@ -39,7 +50,7 @@ def main():
                                 ht.freq[ht.globals.freq_index_dict[pop]].AF))
                  .rename({'pop_maf': '{pop}_maf'.format(pop=pop)}) )
 
-    # Filter based on MAFs, can't work out how to do this dynamically
+    # Filter based on MAFs. Not sure how to do this dynamically
     print('Variants pre-MAF filter: ', ht.count())
     ht = ht.filter(
         (ht.controls_afr_maf >= maf_filter) |
@@ -61,6 +72,19 @@ def main():
     # Liftover
     ht = ht.annotate(
         locus_GRCh38 = hl.liftover(ht.locus, 'GRCh38')
+    )
+
+    #
+    # Add CADD annotations -----------------------------------------------------
+    #
+
+    # Load CADD annotations
+    cadd = hl.read_table(cadd_table)
+
+    # Annotate gnomad with CADD
+    ht = ht.annotate(
+        cadd_raw = cadd[ht.locus, ht.alleles].cadd_raw,
+        cadd_phred = cadd[ht.locus, ht.alleles].cadd_phred
     )
 
     #
