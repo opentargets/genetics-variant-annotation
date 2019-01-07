@@ -12,7 +12,7 @@ Steps:
 
 Info:
 - Output located `gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.parquet`
-- Runs in ~1 hour using below config
+- Runs in ~45 mins using below config
 - 72,909,456 total variants remain
 
 ## Start dataproc spark server
