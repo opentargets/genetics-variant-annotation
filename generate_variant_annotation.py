@@ -11,16 +11,18 @@ def main():
 
     # Args
     version = '190107'
-    # hail_table = 'data/gnomad.genomes.head100k.r2.1.sites.ht'
     hail_table = 'gs://gnomad-public/release/2.1/ht/genomes/gnomad.genomes.r2.1.sites.ht'
-    # chain_file = 'data/grch37_to_grch38.over.chain.gz'
     chain_file = 'gs://hail-common/references/grch37_to_grch38.over.chain.gz'
-    # cadd_table = 'prepare_extra_datasets/CADD_v1.4_GRCh37/temp/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
     cadd_table = 'gs://genetics-portal-staging/variant-annotation/extra_datasets/CADD_v1.4_GRCh37/output/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
-    # out_parquet = 'output/variant-annotation.parquet'
     out_parquet = 'gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.parquet'.format(version=version)
     out_partitions = 256
     maf_filter = 0.001 # 0.1%
+
+    # Local paths
+    # hail_table = 'data/gnomad.genomes.head100k.r2.1.sites.ht'
+    # chain_file = 'data/grch37_to_grch38.over.chain.gz'
+    # cadd_table = 'prepare_extra_datasets/CADD_v1.4_GRCh37/temp/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
+    # out_parquet = 'output/variant-annotation.parquet'
 
     # Check output doesn't exist
     if hl.utils.hadoop_exists(out_parquet):
