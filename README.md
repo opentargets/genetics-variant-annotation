@@ -4,7 +4,7 @@ Variant annotation pipeline
 Workflow to produce variant index for Open Targets Genetics.
 
 Steps:
-- Filters to remove low frequency variants (MAF < 0.001% in any population)
+- Filters to remove low frequency variants (MAF < 0.1% in any population)
 - Removes variants that fail [hard or soft filters](https://macarthurlab.org/2018/10/17/gnomad-v2-1/)
 - Lifts over to GRCh38
 - Adds CADD annotations
