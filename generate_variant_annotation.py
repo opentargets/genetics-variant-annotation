@@ -10,11 +10,12 @@ import sys
 def main():
 
     # Args
-    version = '190107'
+    version = '190118'
     hail_table = 'gs://gnomad-public/release/2.1/ht/genomes/gnomad.genomes.r2.1.sites.ht'
     chain_file = 'gs://hail-common/references/grch37_to_grch38.over.chain.gz'
     cadd_table = 'gs://genetics-portal-staging/variant-annotation/extra_datasets/CADD_v1.4_GRCh37/output/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
     out_parquet = 'gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.parquet'.format(version=version)
+    out_sitelist = 'gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.sitelist.tsv.gz'.format(version=version)
     out_partitions = 256
     maf_filter = 0.001 # 0.1%
 
@@ -37,7 +38,7 @@ def main():
     print('Total number of rows: ', ht.count())
 
     # DEBUG take head
-    # ht = ht.head(1000000)
+    # ht = ht.head(10000)
 
     # Assert that all alleles are biallelic
     assert(ht.all(ht.alleles.length() == 2))
@@ -250,11 +251,21 @@ def main():
                  'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd']
     ht = ht.select(*col_order)
 
+    # Persist as writing twice would cause re-computation
+    ht = ht.persist()
+
     # Repartition and write parquet file
     (
         ht.to_spark(flatten=True)
           .repartition(out_partitions)
           .write.parquet(out_parquet)
+    )
+
+    # Export site list
+    cols = ['chrom_b37', 'pos_b37', 'chrom_b38', 'pos_b38', 'ref', 'alt', 'rsid']
+    (
+        ht.select(*cols)
+          .export(out_sitelist)
     )
 
     return 0
