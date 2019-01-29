@@ -33,7 +33,7 @@ gcloud beta dataproc clusters create \
     --preemptible-worker-boot-disk-size=40GB \
     --worker-boot-disk-size=40 \
     --worker-machine-type=n1-standard-32 \
-    --zone=europe-west1-b \
+    --zone=europe-west1-d \
     --initialization-action-timeout=20m \
     --max-idle=10m
 ```
@@ -194,7 +194,7 @@ gcloud beta dataproc clusters create \
     --preemptible-worker-boot-disk-size=40GB \
     --worker-boot-disk-size=40 \
     --worker-machine-type=n1-standard-8 \
-    --zone=europe-west1-b \
+    --zone=europe-west1-d \
     --initialization-action-timeout=20m \
     --max-idle=15m
 ```
