@@ -10,7 +10,7 @@ import sys
 def main():
 
     # Args
-    version = '190118'
+    version = '190129'
     hail_table = 'gs://gnomad-public/release/2.1/ht/genomes/gnomad.genomes.r2.1.sites.ht'
     chain_file = 'gs://hail-common/references/grch37_to_grch38.over.chain.gz'
     cadd_table = 'gs://genetics-portal-staging/variant-annotation/extra_datasets/CADD_v1.4_GRCh37/output/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
@@ -256,7 +256,7 @@ def main():
 
     # Repartition and write parquet file
     (
-        ht.to_spark(flatten=True)
+        ht.to_spark(flatten=False)
           .repartition(out_partitions)
           .write.parquet(out_parquet)
     )

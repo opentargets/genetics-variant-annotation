@@ -35,7 +35,7 @@ gcloud beta dataproc clusters create \
     --worker-machine-type=n1-standard-32 \
     --zone=europe-west1-b \
     --initialization-action-timeout=20m \
-    --max-idle=15m
+    --max-idle=10m
 ```
 
 ## Sumbit job to dataproc server
