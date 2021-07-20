@@ -6,14 +6,8 @@ Workflow to produce variant index for Open Targets Genetics.
 Steps:
 - Filters to remove low frequency variants (keep variant if MAF > 0.1% in any population)
 - Removes variants that fail [hard or soft filters](https://macarthurlab.org/2018/10/17/gnomad-v2-1/)
-- Lifts over to GRCh38
-- Adds CADD annotations
-- Adds VEP annotations including regulatory and motif features
-
-Info:
-- Output located `gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.parquet`
-- Runs in ~45 mins using below config
-- 72,909,456 total variants remain
+- Lifts over to GRCh37
+- Keep VEP annotations including regulatory and motif features
 
 ## Start dataproc spark server
 ```
