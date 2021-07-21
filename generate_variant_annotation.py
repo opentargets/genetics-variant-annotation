@@ -47,15 +47,15 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
     if test:
         ht = ht.head(test)
 
-    logging.info('Total number of rows: ', ht.count())
+    logging.info(f'Total number of rows: {ht.count()}')
 
     # Assert that all alleles are biallelic:
     assert(ht.all(ht.alleles.length() == 2))
 
-    logging.info('Variants pre-filtering: ', ht.count())
+    logging.info(f'Variants pre-filtering: {ht.count()}')
     ht = ht.filter(ht.filters.length() == 0)
 
-    logging.info('Variants post-quality filter: ', ht.count())
+    logging.info(f'Variants post-quality filter: {ht.count()}')
 
     # Extracting AF indices of populations:
     population_indices = ht.globals.freq_index_dict.collect()[0]
@@ -75,7 +75,7 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
 
     # Applying maf threshold:
     ht = ht.filter(hl.max(ht.maf_values) > maf_threshold)
-    logging.info('Variants post-MAF filter: ', ht.count())
+    logging.info(f'Variants post-MAF filter: {ht.count()}')
 
     # Add chain file
     grch37 = hl.get_reference('GRCh37')
@@ -83,16 +83,16 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
     grch38.add_liftover(chain_file, grch37)
 
     # Liftover
-    # ht = ht.annotate(
-    #     locus_GRCh37=hl.liftover(ht.locus, 'GRCh37')
-    # )
+    ht = ht.annotate(
+        locus_GRCh37=hl.liftover(ht.locus, 'GRCh37')
+    )
 
     # Adding build specific coordinates to the table:
     ht = ht.annotate(
         chrom_b38=ht.locus.contig,
         pos_b38=ht.locus.position,
-        # chrom_b37=ht.locus_GRCh37.contig.replace('chr', ''),
-        # pos_b37=ht.locus_GRCh37.position,
+        chrom_b37=ht.locus_GRCh37.contig.replace('chr', ''),
+        pos_b37=ht.locus_GRCh37.position,
         ref=ht.alleles[0],
         alt=ht.alleles[1]
     )
@@ -129,13 +129,12 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
 
     # Sort columns
     col_order = [
-        'locus_GRCh38', 'chrom_b38', 'pos_b38',
-        # 'chrom_b37', 'pos_b37',
-        'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd'
+        'locus_GRCh38', 'chrom_b38', 'pos_b38', 'chrom_b37', 'pos_b37',
+        'ref', 'alt', 'allele_info', 'vep', 'rsid', 'af', 'cadd'
     ]
     ht = (
         ht.select(*col_order)
-        .persist()
+        # .persist()
     )
 
     # Repartition and write parquet file
