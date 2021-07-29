@@ -3,6 +3,7 @@ import argparse
 import logging
 
 import hail as hl
+from hail.expr.functions import allele_type
 
 
 # Gnomad hail table:
@@ -17,16 +18,16 @@ MAF_THRESHOLD = 0.001
 
 # Population of interest:
 POPULATIONS = {
-    'afr-adj',  # African-American
-    'amr-adj',  # American Admixed/Latino
-    'ami-adj',  # Amish ancestry
-    'asj-adj',  # Ashkenazi Jewish
-    'eas-adj',  # East Asian
-    'fin-adj',  # Finnish
-    'nfe-adj',  # Non-Finnish European
-    'mid-adj',  # Middle Eastern
-    'sas-adj',  # South Asian
-    'oth-adj'  # Other
+    'afr',  # African-American
+    'amr',  # American Admixed/Latino
+    'ami',  # Amish ancestry
+    'asj',  # Ashkenazi Jewish
+    'eas',  # East Asian
+    'fin',  # Finnish
+    'nfe',  # Non-Finnish European
+    'mid',  # Middle Eastern
+    'sas',  # South Asian
+    'oth'  # Other
 }
 
 # Function to convert AF to MAF:
@@ -47,30 +48,22 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
     if test:
         ht = ht.head(test)
 
-    logging.info(f'Total number of rows: {ht.count()}')
-
     # Assert that all alleles are biallelic:
     assert(ht.all(ht.alleles.length() == 2))
 
-    logging.info(f'Variants pre-filtering: {ht.count()}')
     ht = ht.filter(ht.filters.length() == 0)
-
-    logging.info(f'Variants post-quality filter: {ht.count()}')
 
     # Extracting AF indices of populations:
     population_indices = ht.globals.freq_index_dict.collect()[0]
-    population_indices = {pop: index for pop, index in population_indices.items() if pop in POPULATIONS}
+    population_indices = {pop: population_indices[f'{pop}-adj'] for pop in POPULATIONS}
 
     # Adding population allele frequency and minor allele frequency:
     ht = ht.annotate(
         # Generate struct for alt. allele frequency in selected populations:
         af=hl.struct(**{pop: ht.freq[index].AF for pop, index in population_indices.items()}),
 
-        # Generate struct for minor allele frequency for selected populations:
-        maf=hl.struct(**{pop: af_to_maf(ht.freq[index].AF) for pop, index in population_indices.items()}),
-
         # Generate an _array_ with maf values for further filtering:
-        maf_values=hl.array([af_to_maf(ht.freq[index].AF) for pop, index in population_indices.items()])
+        maf_values=hl.array([af_to_maf(ht.freq[index].AF) for _, index in population_indices.items()])
     )
 
     # Applying maf threshold:
@@ -87,14 +80,15 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
         locus_GRCh37=hl.liftover(ht.locus, 'GRCh37')
     )
 
-    # Adding build specific coordinates to the table:
+    # Adding build-specific coordinates to the table:
     ht = ht.annotate(
-        chrom_b38=ht.locus.contig,
+        chrom_b38=ht.locus.contig.replace('chr', ''),
         pos_b38=ht.locus.position,
         chrom_b37=ht.locus_GRCh37.contig.replace('chr', ''),
         pos_b37=ht.locus_GRCh37.position,
         ref=ht.alleles[0],
-        alt=ht.alleles[1]
+        alt=ht.alleles[1],
+        allele_type=ht.allele_info.allele_type
     )
 
     # Updating table:
@@ -129,26 +123,29 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
 
     # Sort columns
     col_order = [
-        'locus_GRCh38', 'chrom_b38', 'pos_b38', 'chrom_b37', 'pos_b37',
-        'ref', 'alt', 'allele_info', 'vep', 'rsid', 'af', 'cadd'
+        'locus_GRCh38', 'chrom_b38', 'pos_b38',
+        'chrom_b37', 'pos_b37',
+        'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd'
     ]
-    ht = (
-        ht.select(*col_order)
-        # .persist()
-    )
 
     # Repartition and write parquet file
     (
         ht
+        .select(*col_order)
         .to_spark(flatten=False)
         .repartition(OUT_PARTITIONS)
         .write.mode('overwrite').parquet(out_parquet)
+        # .write.format('json').mode('overwrite').option('compression', 'gzip').save(out_parquet.replace('.parquet', '.json.gz'))
     )
 
     # Export site list
     (
-        ht.select(*['chrom_b37', 'pos_b37', 'chrom_b38', 'pos_b38', 'ref', 'alt', 'rsid'])
-          .export(out_sitelist)
+        ht.select(*[
+            'chrom_b37', 'pos_b37',
+            'chrom_b38', 'pos_b38',
+            'ref', 'alt', 'rsid'
+        ])
+        .export(out_sitelist)
     )
 
 

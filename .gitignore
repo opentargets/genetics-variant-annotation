@@ -1,2 +1,3 @@
 hail-*.log
 .DS_Store
+.vscode/
