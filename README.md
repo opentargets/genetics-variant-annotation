@@ -9,42 +9,56 @@ Steps:
 - Lifts over to GRCh37
 - Keep VEP annotations including regulatory and motif features
 
+## Usage
+
+```
+usage: generate_variant_annotation.py [-h] [--gnomadFile GNOMADFILE] [--chainFile CHAINFILE] [--mafThreshold MAFTHRESHOLD] [--test TEST]
+                                      --outputFolder OUTPUTFOLDER
+
+
+This script generates variant table for OpenTargets Genetics pipelines.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --gnomadFile GNOMADFILE
+                        Hail table of the 3+ version of gnomAD dataset.
+  --chainFile CHAINFILE
+                        GRCh38 -> GRCh37 liftover chain file.
+  --mafThreshold MAFTHRESHOLD
+                        Lower threshold for minor allele frequency.
+  --outputFolder OUTPUTFOLDER
+                        Directory into which the output files will be saved.
+  --test TEST           Number of rows taken for testing and debug purposes
+```
+
 ## Start dataproc spark server
 ```
-# Start server
-gcloud beta dataproc clusters create \
-    em-cluster-variant-annotation \
-    --image-version=1.2-deb9 \
-    --metadata=MINICONDA_VERSION=4.4.10,JAR=gs://hail-common/builds/0.2/jars/hail-0.2-07b91f4bd378-Spark-2.2.0.jar,ZIP=gs://hail-common/builds/0.2/python/hail-0.2-07b91f4bd378.zip \
-    --properties=spark:spark.driver.memory=41g,spark:spark.driver.maxResultSize=0,spark:spark.task.maxFailures=20,spark:spark.kryoserializer.buffer.max=1g,spark:spark.driver.extraJavaOptions=-Xss4M,spark:spark.executor.extraJavaOptions=-Xss4M,hdfs:dfs.replication=1 \
-    --initialization-actions=gs://dataproc-initialization-actions/conda/bootstrap-conda.sh,gs://hail-common/cloudtools/init_notebook1.py \
-    --master-machine-type=n1-highmem-8 \
+gcloud dataproc clusters create hail-cluster \
+    --image-version=2.0.6-debian10 \
+    --properties="^|||^spark:spark.task.maxFailures=20|||spark:spark.driver.extraJavaOptions=-Xss4M|||spark:spark.executor.extraJavaOptions=-Xss4M|||spark:spark.speculation=true|||hdfs:dfs.replication=1|||dataproc:dataproc.logging.stackdriver.enable=false|||dataproc:dataproc.monitoring.stackdriver.enable=false|||spark:spark.driver.memory=1146g" \
+    --initialization-actions="gs://hail-common/hailctl/dataproc/0.2.73/init_notebook.py" \
+    --metadata="^|||^WHEEL=gs://hail-common/hailctl/dataproc/0.2.73/hail-0.2.73-py3-none-any.whl|||PKGS=aiohttp==3.7.4|aiohttp_session>=2.7,<2.8|asyncinit>=0.2.4,<0.3|bokeh>1.3,<2.0|boto3>=1.17,<2.0|botocore>=1.20,<2.0|decorator<5|Deprecated>=1.2.10,<1.3|dill>=0.3.1.1,<0.4|gcsfs==0.8.0|fsspec==0.9.0|humanize==1.0.0|hurry.filesize==0.9|janus>=0.6,<0.7|nest_asyncio|numpy<2|pandas>=1.1.0,<1.1.5|parsimonious<0.9|PyJWT|python-json-logger==0.1.11|requests==2.25.1|scipy>1.2,<1.7|tabulate==0.8.3|tqdm==4.42.1|google-cloud-storage==1.25.*" \
+    --master-machine-type=n1-standard-16 \
     --master-boot-disk-size=100GB \
     --num-master-local-ssds=0 \
-    --num-preemptible-workers=0 \
-    --num-worker-local-ssds=0 \
-    --num-workers=3 \
-    --preemptible-worker-boot-disk-size=40GB \
-    --worker-boot-disk-size=40 \
-    --worker-machine-type=n1-standard-32 \
-    --zone=europe-west1-d \
+    --region=europe-west1 \
     --initialization-action-timeout=20m \
-    --max-idle=10m
+    --project=open-targets-genetics-dev \
+    --num-workers 2 \
+    --worker-machine-type n1-standard-16 \
+    --worker-boot-disk-size 500 \
+    --labels=creator=dsuveges_ebi_ac_uk
 ```
 
 ## Sumbit job to dataproc server
 ```
 # Get lastest hash
-HASH=$(gsutil cat gs://hail-common/builds/0.2/latest-hash/cloudtools-3-spark-2.2.0.txt)
-
-# Submit to cluster
-gcloud dataproc jobs submit pyspark \
-  --cluster=em-cluster-variant-annotation \
-  --files=gs://hail-common/builds/0.2/jars/hail-0.2-$HASH-Spark-2.2.0.jar \
-  --py-files=gs://hail-common/builds/0.2/python/hail-0.2-$HASH.zip \
-  --properties="spark.driver.extraClassPath=./hail-0.2-$HASH-Spark-2.2.0.jar,spark.executor.extraClassPath=./hail-0.2-$HASH-Spark-2.2.0.jar" \
-  generate_variant_annotation.py
-
+gcloud dataproc jobs submit pyspark   \
+    --cluster=hail-cluster \
+    --project=open-targets-genetics-dev \
+    --region=europe-west1 generate_variant_annotation.py \
+    -- \
+    --outputFolder ${OUTPUT_BUCKET}
 ```
 
 ## Output schema
@@ -136,19 +150,18 @@ Row fields:
             variant_allele: str
         }>
     }
-    'rsid': str
+    'rsid': array<str>
     'af': struct {
-        gnomad_afr: float64,
-        gnomad_amr: float64,
-        gnomad_asj: float64,
-        gnomad_eas: float64,
-        gnomad_fin: float64,
-        gnomad_nfe: float64,
-        gnomad_nfe_est: float64,
-        gnomad_nfe_nwe: float64,
-        gnomad_nfe_onf: float64,
-        gnomad_nfe_seu: float64,
-        gnomad_oth: float64
+        afr: float64,
+        amr: float64,
+        ami: float64,
+        asj: float64,
+        eas: float64,
+        fin: float64,
+        nfe: float64,
+        mid: float64,
+        sas: float64,
+        oth: float64
     }
     'cadd': struct {
         raw: float64,
@@ -157,38 +170,4 @@ Row fields:
 ----------------------------------------
 Key: ['locus', 'alleles']
 ----------------------------------------
-```
-
-## Old
-
-#### Run locally
-```
-export PYSPARK_SUBMIT_ARGS="--driver-memory 8g pyspark-shell"
-python generate_variant_annotation.py
-```
-
-#### Smaller cluster config
-```
-# Create command using Neale labs cloudtools
-# cluster start --max-idle 15m --zone europe-west1-b --dry-run em-cluster
-
-# Create server
-gcloud beta dataproc clusters create \
-    em-cluster \
-    --image-version=1.2-deb9 \
-    --metadata=MINICONDA_VERSION=4.4.10,JAR=gs://hail-common/builds/0.2/jars/hail-0.2-07b91f4bd378-Spark-2.2.0.jar,ZIP=gs://hail-common/builds/0.2/python/hail-0.2-07b91f4bd378.zip \
-    --properties=spark:spark.driver.memory=41g,spark:spark.driver.maxResultSize=0,spark:spark.task.maxFailures=20,spark:spark.kryoserializer.buffer.max=1g,spark:spark.driver.extraJavaOptions=-Xss4M,spark:spark.executor.extraJavaOptions=-Xss4M,hdfs:dfs.replication=1 \
-    --initialization-actions=gs://dataproc-initialization-actions/conda/bootstrap-conda.sh,gs://hail-common/cloudtools/init_notebook1.py \
-    --master-machine-type=n1-highmem-8 \
-    --master-boot-disk-size=100GB \
-    --num-master-local-ssds=0 \
-    --num-preemptible-workers=0 \
-    --num-worker-local-ssds=0 \
-    --num-workers=2 \
-    --preemptible-worker-boot-disk-size=40GB \
-    --worker-boot-disk-size=40 \
-    --worker-machine-type=n1-standard-8 \
-    --zone=europe-west1-d \
-    --initialization-action-timeout=20m \
-    --max-idle=15m
 ```
