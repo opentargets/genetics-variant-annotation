@@ -68,7 +68,6 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
 
     # Applying maf threshold:
     ht = ht.filter(hl.max(ht.maf_values) > maf_threshold)
-    logging.info(f'Variants post-MAF filter: {ht.count()}')
 
     # Add chain file
     grch37 = hl.get_reference('GRCh37')
@@ -133,7 +132,7 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
         ht
         .select(*col_order)
         .to_spark(flatten=False)
-        .repartition(OUT_PARTITIONS)
+        # .repartition(OUT_PARTITIONS)
         .write.mode('overwrite').parquet(out_parquet)
         # .write.format('json').mode('overwrite').option('compression', 'gzip').save(out_parquet.replace('.parquet', '.json.gz'))
     )
