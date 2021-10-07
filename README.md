@@ -31,143 +31,161 @@ optional arguments:
   --test TEST           Number of rows taken for testing and debug purposes
 ```
 
-## Start dataproc spark server
+The script contains defaults for chainfile and the gnomad file:
+
+```python
+# Gnomad hail table:
+GNOMAD_3_TABLE = 'gs://gcp-public-data--gnomad/release/3.1.1/ht/genomes/gnomad.genomes.v3.1.1.sites.ht'
+
+# GRCh38 to 37 chainfile:
+CHAIN_FILE = 'gs://hail-common/references/grch38_to_grch37.over.chain.gz'
+
 ```
-gcloud dataproc clusters create hail-cluster \
+
+## Start dataproc spark server
+
+The dataproc cluster is single node, high-mem, with the most recent version of hail (`v.0.2.77`) as of 2010.10.05. 
+
+```
+gcloud dataproc clusters create hail-test-single \
     --image-version=2.0.6-debian10 \
-    --properties="^|||^spark:spark.task.maxFailures=20|||spark:spark.driver.extraJavaOptions=-Xss4M|||spark:spark.executor.extraJavaOptions=-Xss4M|||spark:spark.speculation=true|||hdfs:dfs.replication=1|||dataproc:dataproc.logging.stackdriver.enable=false|||dataproc:dataproc.monitoring.stackdriver.enable=false|||spark:spark.driver.memory=1146g" \
-    --initialization-actions="gs://hail-common/hailctl/dataproc/0.2.73/init_notebook.py" \
-    --metadata="^|||^WHEEL=gs://hail-common/hailctl/dataproc/0.2.73/hail-0.2.73-py3-none-any.whl|||PKGS=aiohttp==3.7.4|aiohttp_session>=2.7,<2.8|asyncinit>=0.2.4,<0.3|bokeh>1.3,<2.0|boto3>=1.17,<2.0|botocore>=1.20,<2.0|decorator<5|Deprecated>=1.2.10,<1.3|dill>=0.3.1.1,<0.4|gcsfs==0.8.0|fsspec==0.9.0|humanize==1.0.0|hurry.filesize==0.9|janus>=0.6,<0.7|nest_asyncio|numpy<2|pandas>=1.1.0,<1.1.5|parsimonious<0.9|PyJWT|python-json-logger==0.1.11|requests==2.25.1|scipy>1.2,<1.7|tabulate==0.8.3|tqdm==4.42.1|google-cloud-storage==1.25.*" \
-    --master-machine-type=n1-standard-16 \
+    --properties="^|||^spark:spark.task.maxFailures=20|||spark:spark.driver.extraJavaOptions=-Xss4M|||spark:spark.executor.extraJavaOptions=-Xss4M|||hdfs:dfs.replication=1|||spark:spark.driver.memory=1146g" \
+    --initialization-actions="gs://hail-common/hailctl/dataproc/0.2.77/init_notebook.py" \
+    --metadata="^|||^WHEEL=gs://hail-common/hailctl/dataproc/0.2.77/hail-0.2.77-py3-none-any.whl|||PKGS=aiohttp==3.7.4|aiohttp_session>=2.7,<2.8|asyncinit>=0.2.4,<0.3|avro>=1.10,<1.11|azure-identity==1.6.0|azure-storage-blob==12.8.1|bokeh>1.3,<2.0|boto3>=1.17,<2.0|botocore>=1.20,<2.0|decorator<5|Deprecated>=1.2.10,<1.3|dill>=0.3.1.1,<0.4|gcsfs==0.8.0|fsspec==0.9.0|google-auth==1.27.0|humanize==1.0.0|hurry.filesize==0.9|janus>=0.6,<0.7|nest_asyncio|numpy<2|pandas>=1.1.0,<1.1.5|parsimonious<0.9|PyJWT|python-json-logger==0.1.11|requests==2.25.1|scipy>1.2,<1.7|sortedcontainers==2.1.0|tabulate==0.8.3|tqdm==4.42.1|google-cloud-storage==1.25.*" \
+    --master-machine-type=m1-megamem-96 \
     --master-boot-disk-size=100GB \
-    --num-master-local-ssds=0 \
+    --secondary-worker-boot-disk-size=40GB \
+    --worker-boot-disk-size=40GB \
+    --single-node \
+    --worker-machine-type=n1-standard-8 \
     --region=europe-west1 \
     --initialization-action-timeout=20m \
-    --project=open-targets-genetics-dev \
-    --num-workers 2 \
-    --worker-machine-type n1-standard-16 \
-    --worker-boot-disk-size 500 \
-    --labels=creator=dsuveges_ebi_ac_uk
+    --project=open-targets-genetics-dev
 ```
 
 ## Sumbit job to dataproc server
 ```
-# Get lastest hash
-gcloud dataproc jobs submit pyspark   \
-    --cluster=hail-cluster \
-    --project=open-targets-genetics-dev \
-    --region=europe-west1 generate_variant_annotation.py \
-    -- \
-    --outputFolder ${OUTPUT_BUCKET}
+CLUSTER="hail-test-single"
+PROJECT="open-targets-genetics-dev"
+REGION="europe-west1"
+TODAY=$(date "+%Y-%m-%d")
+
+gcloud dataproc jobs submit pyspark \
+  --cluster=${CLUSTER} \
+  --project=${PROJECT} \
+  --region=${REGION} \
+  generate_variant_annotation.py -- \
+  --outputFolder gs://genetics-portal-dev-raw/variant_index/${TODAY}
 ```
 
 ## Output schema
 ```
-----------------------------------------
-Global fields:
-    None
-----------------------------------------
-Row fields:
-    'locus': locus<GRCh37>
-    'alleles': array<str>
-    'locus_GRCh38': locus<GRCh38>
-    'chrom_b37': str
-    'pos_b37': int32
-    'chrom_b38': str
-    'pos_b38': int32
-    'ref': str
-    'alt': str
-    'allele_type': str
-    'vep': struct {
-        most_severe_consequence: str,
-        motif_feature_consequences: array<struct {
-            allele_num: int32,
-            consequence_terms: array<str>,
-            high_inf_pos: str,
-            impact: str,
-            minimised: int32,
-            motif_feature_id: str,
-            motif_name: str,
-            motif_pos: int32,
-            motif_score_change: float64,
-            strand: int32,
-            variant_allele: str
-        }>,
-        regulatory_feature_consequences: array<struct {
-            allele_num: int32,
-            biotype: str,
-            consequence_terms: array<str>,
-            impact: str,
-            minimised: int32,
-            regulatory_feature_id: str,
-            variant_allele: str
-        }>,
-        transcript_consequences: array<struct {
-            allele_num: int32,
-            amino_acids: str,
-            biotype: str,
-            canonical: int32,
-            ccds: str,
-            cdna_start: int32,
-            cdna_end: int32,
-            cds_end: int32,
-            cds_start: int32,
-            codons: str,
-            consequence_terms: array<str>,
-            distance: int32,
-            domains: array<struct {
-                db: str,
-                name: str
-            }>,
-            exon: str,
-            gene_id: str,
-            gene_pheno: int32,
-            gene_symbol: str,
-            gene_symbol_source: str,
-            hgnc_id: str,
-            hgvsc: str,
-            hgvsp: str,
-            hgvs_offset: int32,
-            impact: str,
-            intron: str,
-            lof: str,
-            lof_flags: str,
-            lof_filter: str,
-            lof_info: str,
-            minimised: int32,
-            polyphen_prediction: str,
-            polyphen_score: float64,
-            protein_end: int32,
-            protein_start: int32,
-            protein_id: str,
-            sift_prediction: str,
-            sift_score: float64,
-            strand: int32,
-            swissprot: str,
-            transcript_id: str,
-            trembl: str,
-            uniparc: str,
-            variant_allele: str
-        }>
-    }
-    'rsid': array<str>
-    'af': struct {
-        afr: float64,
-        amr: float64,
-        ami: float64,
-        asj: float64,
-        eas: float64,
-        fin: float64,
-        nfe: float64,
-        mid: float64,
-        sas: float64,
-        oth: float64
-    }
-    'cadd': struct {
-        raw: float64,
-        phred: float64
-    }
-----------------------------------------
-Key: ['locus', 'alleles']
-----------------------------------------
+root
+ |-- locus: struct (nullable = true)
+ |    |-- contig: string (nullable = true)
+ |    |-- position: integer (nullable = true)
+ |-- alleles: array (nullable = true)
+ |    |-- element: string (containsNull = true)
+ |-- locus_GRCh38: struct (nullable = true)
+ |    |-- contig: string (nullable = true)
+ |    |-- position: integer (nullable = true)
+ |-- chrom_b38: string (nullable = true)
+ |-- pos_b38: integer (nullable = true)
+ |-- chrom_b37: string (nullable = true)
+ |-- pos_b37: integer (nullable = true)
+ |-- ref: string (nullable = true)
+ |-- alt: string (nullable = true)
+ |-- allele_type: string (nullable = true)
+ |-- vep: struct (nullable = true)
+ |    |-- most_severe_consequence: string (nullable = true)
+ |    |-- motif_feature_consequences: array (nullable = true)
+ |    |    |-- element: struct (containsNull = true)
+ |    |    |    |-- allele_num: integer (nullable = true)
+ |    |    |    |-- consequence_terms: array (nullable = true)
+ |    |    |    |    |-- element: string (containsNull = true)
+ |    |    |    |-- high_inf_pos: string (nullable = true)
+ |    |    |    |-- impact: string (nullable = true)
+ |    |    |    |-- minimised: integer (nullable = true)
+ |    |    |    |-- motif_feature_id: string (nullable = true)
+ |    |    |    |-- motif_name: string (nullable = true)
+ |    |    |    |-- motif_pos: integer (nullable = true)
+ |    |    |    |-- motif_score_change: double (nullable = true)
+ |    |    |    |-- strand: integer (nullable = true)
+ |    |    |    |-- variant_allele: string (nullable = true)
+ |    |-- regulatory_feature_consequences: array (nullable = true)
+ |    |    |-- element: struct (containsNull = true)
+ |    |    |    |-- allele_num: integer (nullable = true)
+ |    |    |    |-- biotype: string (nullable = true)
+ |    |    |    |-- consequence_terms: array (nullable = true)
+ |    |    |    |    |-- element: string (containsNull = true)
+ |    |    |    |-- impact: string (nullable = true)
+ |    |    |    |-- minimised: integer (nullable = true)
+ |    |    |    |-- regulatory_feature_id: string (nullable = true)
+ |    |    |    |-- variant_allele: string (nullable = true)
+ |    |-- transcript_consequences: array (nullable = true)
+ |    |    |-- element: struct (containsNull = true)
+ |    |    |    |-- allele_num: integer (nullable = true)
+ |    |    |    |-- amino_acids: string (nullable = true)
+ |    |    |    |-- appris: string (nullable = true)
+ |    |    |    |-- biotype: string (nullable = true)
+ |    |    |    |-- canonical: integer (nullable = true)
+ |    |    |    |-- ccds: string (nullable = true)
+ |    |    |    |-- cdna_start: integer (nullable = true)
+ |    |    |    |-- cdna_end: integer (nullable = true)
+ |    |    |    |-- cds_end: integer (nullable = true)
+ |    |    |    |-- cds_start: integer (nullable = true)
+ |    |    |    |-- codons: string (nullable = true)
+ |    |    |    |-- consequence_terms: array (nullable = true)
+ |    |    |    |    |-- element: string (containsNull = true)
+ |    |    |    |-- distance: integer (nullable = true)
+ |    |    |    |-- domains: array (nullable = true)
+ |    |    |    |    |-- element: struct (containsNull = true)
+ |    |    |    |    |    |-- db: string (nullable = true)
+ |    |    |    |    |    |-- name: string (nullable = true)
+ |    |    |    |-- exon: string (nullable = true)
+ |    |    |    |-- gene_id: string (nullable = true)
+ |    |    |    |-- gene_pheno: integer (nullable = true)
+ |    |    |    |-- gene_symbol: string (nullable = true)
+ |    |    |    |-- gene_symbol_source: string (nullable = true)
+ |    |    |    |-- hgnc_id: string (nullable = true)
+ |    |    |    |-- hgvsc: string (nullable = true)
+ |    |    |    |-- hgvsp: string (nullable = true)
+ |    |    |    |-- hgvs_offset: integer (nullable = true)
+ |    |    |    |-- impact: string (nullable = true)
+ |    |    |    |-- intron: string (nullable = true)
+ |    |    |    |-- lof: string (nullable = true)
+ |    |    |    |-- lof_flags: string (nullable = true)
+ |    |    |    |-- lof_filter: string (nullable = true)
+ |    |    |    |-- lof_info: string (nullable = true)
+ |    |    |    |-- minimised: integer (nullable = true)
+ |    |    |    |-- polyphen_prediction: string (nullable = true)
+ |    |    |    |-- polyphen_score: double (nullable = true)
+ |    |    |    |-- protein_end: integer (nullable = true)
+ |    |    |    |-- protein_start: integer (nullable = true)
+ |    |    |    |-- protein_id: string (nullable = true)
+ |    |    |    |-- sift_prediction: string (nullable = true)
+ |    |    |    |-- sift_score: double (nullable = true)
+ |    |    |    |-- strand: integer (nullable = true)
+ |    |    |    |-- swissprot: string (nullable = true)
+ |    |    |    |-- transcript_id: string (nullable = true)
+ |    |    |    |-- trembl: string (nullable = true)
+ |    |    |    |-- tsl: integer (nullable = true)
+ |    |    |    |-- uniparc: string (nullable = true)
+ |    |    |    |-- variant_allele: string (nullable = true)
+ |-- rsid: array (nullable = true)
+ |    |-- element: string (containsNull = true)
+ |-- af: struct (nullable = true)
+ |    |-- oth: double (nullable = true)
+ |    |-- amr: double (nullable = true)
+ |    |-- fin: double (nullable = true)
+ |    |-- ami: double (nullable = true)
+ |    |-- mid: double (nullable = true)
+ |    |-- nfe: double (nullable = true)
+ |    |-- sas: double (nullable = true)
+ |    |-- asj: double (nullable = true)
+ |    |-- eas: double (nullable = true)
+ |    |-- afr: double (nullable = true)
+ |-- cadd: struct (nullable = true)
+ |    |-- phred: float (nullable = true)
+ |    |-- raw: float (nullable = true)
 ```

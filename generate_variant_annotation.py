@@ -51,6 +51,7 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
     # Assert that all alleles are biallelic:
     assert(ht.all(ht.alleles.length() == 2))
 
+    # What does this filter do:
     ht = ht.filter(ht.filters.length() == 0)
 
     # Extracting AF indices of populations:
@@ -133,6 +134,7 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
         .select(*col_order)
         .to_spark(flatten=False)
         # .repartition(OUT_PARTITIONS)
+        .coalesce(OUT_PARTITIONS)
         .write.mode('overwrite').parquet(out_parquet)
         # .write.format('json').mode('overwrite').option('compression', 'gzip').save(out_parquet.replace('.parquet', '.json.gz'))
     )
