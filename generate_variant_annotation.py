@@ -51,7 +51,7 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
     # Assert that all alleles are biallelic:
     assert(ht.all(ht.alleles.length() == 2))
 
-    # What does this filter do:
+    # So we are filtering out all the variants that had failed any of the variant calling QC:
     ht = ht.filter(ht.filters.length() == 0)
 
     # Extracting AF indices of populations:
