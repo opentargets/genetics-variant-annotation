@@ -11,40 +11,11 @@ Steps:
 
 ## Usage
 
-```
-usage: generate_variant_annotation.py [-h] [--gnomadFile GNOMADFILE] [--chainFile CHAINFILE] [--mafThreshold MAFTHRESHOLD] [--test TEST]
-                                      --outputFolder OUTPUTFOLDER
+For detailed description and the applied defaults of the script, please run `generate_variant_annotation.py -h`.
 
+### Start dataproc spark server
 
-This script generates variant table for OpenTargets Genetics pipelines.
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --gnomadFile GNOMADFILE
-                        Hail table of the 3+ version of gnomAD dataset.
-  --chainFile CHAINFILE
-                        GRCh38 -> GRCh37 liftover chain file.
-  --mafThreshold MAFTHRESHOLD
-                        Lower threshold for minor allele frequency.
-  --outputFolder OUTPUTFOLDER
-                        Directory into which the output files will be saved.
-  --test TEST           Number of rows taken for testing and debug purposes
-```
-
-The script contains defaults for chainfile and the gnomad file:
-
-```python
-# Gnomad hail table:
-GNOMAD_3_TABLE = 'gs://gcp-public-data--gnomad/release/3.1.1/ht/genomes/gnomad.genomes.v3.1.1.sites.ht'
-
-# GRCh38 to 37 chainfile:
-CHAIN_FILE = 'gs://hail-common/references/grch38_to_grch37.over.chain.gz'
-
-```
-
-## Start dataproc spark server
-
-The dataproc cluster is single node, high-mem, with the most recent version of hail (`v.0.2.77`) as of 2010.10.05. 
+The dataproc cluster is single node, high-mem, with the most recent version of hail (`v.0.2.77`) as of 2021-10-05. 
 
 ```
 gcloud dataproc clusters create hail-test-single \
@@ -63,7 +34,8 @@ gcloud dataproc clusters create hail-test-single \
     --project=open-targets-genetics-dev
 ```
 
-## Sumbit job to dataproc server
+### Submit job to dataproc server
+
 ```
 CLUSTER="hail-test-single"
 PROJECT="open-targets-genetics-dev"

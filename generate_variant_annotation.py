@@ -1,6 +1,6 @@
-import sys
 import argparse
 import logging
+import sys
 
 import hail as hl
 from hail.expr.functions import allele_type
@@ -27,11 +27,11 @@ POPULATIONS = {
     'nfe',  # Non-Finnish European
     'mid',  # Middle Eastern
     'sas',  # South Asian
-    'oth'  # Other
+    'oth'   # Other
 }
 
-# Function to convert AF to MAF:
 def af_to_maf(af):
+    """Converts AF to MAF. The resulting value is always <= 0.5."""
     return hl.if_else(af <= 0.5, af, 1 - af)
 
 
@@ -39,7 +39,6 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
 
     # Output files:
     out_parquet = f'{out_folder}/variant-annotation.parquet'
-    out_sitelist = f'{out_folder}/variant-annotation.sitelist.tsv.gz'
 
     # Load data
     ht = hl.read_table(gnomad_file)
@@ -49,7 +48,7 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
         ht = ht.head(test)
 
     # Assert that all alleles are biallelic:
-    assert(ht.all(ht.alleles.length() == 2))
+    assert ht.all(ht.alleles.length() == 2), 'Mono- or multiallelic variants have been found.'
 
     # So we are filtering out all the variants that had failed any of the variant calling QC:
     ht = ht.filter(ht.filters.length() == 0)
@@ -133,20 +132,8 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
         ht
         .select(*col_order)
         .to_spark(flatten=False)
-        # .repartition(OUT_PARTITIONS)
         .coalesce(OUT_PARTITIONS)
         .write.mode('overwrite').parquet(out_parquet)
-        # .write.format('json').mode('overwrite').option('compression', 'gzip').save(out_parquet.replace('.parquet', '.json.gz'))
-    )
-
-    # Export site list
-    (
-        ht.select(*[
-            'chrom_b37', 'pos_b37',
-            'chrom_b38', 'pos_b38',
-            'ref', 'alt', 'rsid'
-        ])
-        .export(out_sitelist)
     )
 
 
@@ -154,13 +141,14 @@ if __name__ == '__main__':
 
     # Parsing command line arguments
     parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='This script generates variant table for OpenTargets Genetics pipelines.')
     parser.add_argument('--gnomadFile', help='Hail table of the 3+ version of gnomAD dataset.',
-                        type=str, required=False)
+                        type=str, required=False, default=GNOMAD_3_TABLE)
     parser.add_argument('--chainFile', help='GRCh38 -> GRCh37 liftover chain file.',
-                        type=str, required=False)
+                        type=str, required=False, default=CHAIN_FILE)
     parser.add_argument('--mafThreshold', help='Lower threshold for minor allele frequency.',
-                        type=float, required=False)
+                        type=float, required=False, default=MAF_THRESHOLD)
     parser.add_argument('--outputFolder', help='Directory into which the output files will be saved.',
                         type=str, required=True)
     parser.add_argument('--test', help='Number of rows taken for testing and debug purposes',
