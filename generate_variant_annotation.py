@@ -14,7 +14,6 @@ CHAIN_FILE = 'gs://hail-common/references/grch38_to_grch37.over.chain.gz'
 
 # Parameters:
 OUT_PARTITIONS = 256
-MAF_THRESHOLD = 0.001
 
 # Population of interest:
 POPULATIONS = {
@@ -35,7 +34,7 @@ def af_to_maf(af):
     return hl.if_else(af <= 0.5, af, 1 - af)
 
 
-def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
+def main(gnomad_file, chain_file, out_folder, test=None):
 
     # Output files:
     out_parquet = f'{out_folder}/variant-annotation.parquet'
@@ -57,17 +56,8 @@ def main(gnomad_file, chain_file, maf_threshold, out_folder, test=None):
     population_indices = ht.globals.freq_index_dict.collect()[0]
     population_indices = {pop: population_indices[f'{pop}-adj'] for pop in POPULATIONS}
 
-    # Adding population allele frequency and minor allele frequency:
-    ht = ht.annotate(
-        # Generate struct for alt. allele frequency in selected populations:
-        af=hl.struct(**{pop: ht.freq[index].AF for pop, index in population_indices.items()}),
-
-        # Generate an _array_ with maf values for further filtering:
-        maf_values=hl.array([af_to_maf(ht.freq[index].AF) for _, index in population_indices.items()])
-    )
-
-    # Applying maf threshold:
-    ht = ht.filter(hl.max(ht.maf_values) > maf_threshold)
+    # Generate struct for alt. allele frequency in selected populations:
+    ht = ht.annotate(af=hl.struct(**{pop: ht.freq[index].AF for pop, index in population_indices.items()}))
 
     # Add chain file
     grch37 = hl.get_reference('GRCh37')
@@ -147,8 +137,6 @@ if __name__ == '__main__':
                         type=str, required=False, default=GNOMAD_3_TABLE)
     parser.add_argument('--chainFile', help='GRCh38 -> GRCh37 liftover chain file.',
                         type=str, required=False, default=CHAIN_FILE)
-    parser.add_argument('--mafThreshold', help='Lower threshold for minor allele frequency.',
-                        type=float, required=False, default=MAF_THRESHOLD)
     parser.add_argument('--outputFolder', help='Directory into which the output files will be saved.',
                         type=str, required=True)
     parser.add_argument('--test', help='Number of rows taken for testing and debug purposes',
@@ -158,7 +146,6 @@ if __name__ == '__main__':
 
     gnomad_file = args.gnomadFile if args.gnomadFile else GNOMAD_3_TABLE
     chain_file = args.chainFile if args.chainFile else CHAIN_FILE
-    maf_threshold = args.mafThreshold if args.mafThreshold else MAF_THRESHOLD
     out_folder = args.outputFolder
 
     # Initialize logging
@@ -173,9 +160,8 @@ if __name__ == '__main__':
     logging.info(f'GnomAD file: {gnomad_file}')
     logging.info(f'Chains file: {chain_file}')
     logging.info(f'Chain file: {chain_file}')
-    logging.info(f'MAF threshold: {maf_threshold}')
     logging.info(f'Output folder: {out_folder}')
     if args.test:
         logging.info(f'Test run. Number of variants taken: {args.test}')
 
-    main(gnomad_file, chain_file, maf_threshold, out_folder, args.test)
+    main(gnomad_file, chain_file, out_folder, args.test)
