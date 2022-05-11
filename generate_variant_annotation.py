@@ -1,239 +1,103 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-# Ed Mountjoy
-#
-
-import hail as hl
+import argparse
+import logging
 import sys
 
-def main():
+import hail as hl
+from hail.expr.functions import allele_type
 
-    # Args
-    version = '190129'
-    hail_table = 'gs://gnomad-public/release/2.1/ht/genomes/gnomad.genomes.r2.1.sites.ht'
-    chain_file = 'gs://hail-common/references/grch37_to_grch38.over.chain.gz'
-    cadd_table = 'gs://genetics-portal-staging/variant-annotation/extra_datasets/CADD_v1.4_GRCh37/output/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
-    out_parquet = 'gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.parquet'.format(version=version)
-    out_sitelist = 'gs://genetics-portal-staging/variant-annotation/{version}/variant-annotation.sitelist.tsv.gz'.format(version=version)
-    out_partitions = 256
-    maf_filter = 0.001 # 0.1%
 
-    # Local paths
-    # hail_table = 'data/gnomad.genomes.head100k.r2.1.sites.ht'
-    # chain_file = 'data/grch37_to_grch38.over.chain.gz'
-    # cadd_table = 'prepare_extra_datasets/CADD_v1.4_GRCh37/temp/cadd_v1.4_gnomad.genomes.r2.0.1.sites.ht'
-    # out_parquet = 'output/variant-annotation.parquet'
+# Gnomad hail table:
+GNOMAD_3_TABLE = 'gs://gcp-public-data--gnomad/release/3.1.1/ht/genomes/gnomad.genomes.v3.1.1.sites.ht'
 
-    # Check output doesn't exist
-    if hl.utils.hadoop_exists(out_parquet):
-        sys.exit('Error! Output file already exists: {0}'.format(out_parquet))
+# GRCh38 to 37 chainfile:
+CHAIN_FILE = 'gs://hail-common/references/grch38_to_grch37.over.chain.gz'
 
-    #
-    # Load ---------------------------------------------------------------------
-    #
+# Parameters:
+OUT_PARTITIONS = 256
+
+# Population of interest:
+POPULATIONS = {
+    'afr',  # African-American
+    'amr',  # American Admixed/Latino
+    'ami',  # Amish ancestry
+    'asj',  # Ashkenazi Jewish
+    'eas',  # East Asian
+    'fin',  # Finnish
+    'nfe',  # Non-Finnish European
+    'mid',  # Middle Eastern
+    'sas',  # South Asian
+    'oth'   # Other
+}
+
+def af_to_maf(af):
+    """Converts AF to MAF. The resulting value is always <= 0.5."""
+    return hl.if_else(af <= 0.5, af, 1 - af)
+
+
+def main(gnomad_file, chain_file, out_folder, test=None):
+
+    # Output files:
+    out_parquet = f'{out_folder}/variant-annotation.parquet'
 
     # Load data
-    ht = hl.read_table(hail_table)
-    print('Total number of rows: ', ht.count())
+    ht = hl.read_table(gnomad_file)
 
-    # DEBUG take head
-    # ht = ht.head(10000)
+    # If process is being tested, take head:
+    if test:
+        ht = ht.head(test)
 
-    # Assert that all alleles are biallelic
-    assert(ht.all(ht.alleles.length() == 2))
+    # Assert that all alleles are biallelic:
+    assert ht.all(ht.alleles.length() == 2), 'Mono- or multiallelic variants have been found.'
 
-    #
-    # Remove variants not passing hard or soft filters -------------------------
-    # https://macarthurlab.org/2018/10/17/gnomad-v2-1/
-    #
-
-    print('Variants pre-filtering: ', ht.count())
+    # So we are filtering out all the variants that had failed any of the variant calling QC:
     ht = ht.filter(ht.filters.length() == 0)
-    print('Variants post-quality filter: ', ht.count())
 
-    #
-    # Filter based on allele frequency -----------------------------------------
-    #
+    # Extracting AF indices of populations:
+    population_indices = ht.globals.freq_index_dict.collect()[0]
+    population_indices = {pop: population_indices[f'{pop}-adj'] for pop in POPULATIONS}
 
-    # WARNING: Not sure how to do this dynamically, so it is hard coded.
-    # May need updating for future versions of gnomad.
-
-    # Print population keys that need to be included
-    # populations = parse_population_keys(
-    #     sorted(hl.eval(ht.globals.freq_index_dict.keys())) )
-    # print(populations)
-
-    ht = ht.annotate(af = hl.struct(), maf = hl.struct())
-    ht = ht.annotate(
-
-        # Allele freqs
-        af = ht.af.annotate(
-            gnomad_afr = ht.freq[ht.globals.freq_index_dict['gnomad_afr']].AF,
-            gnomad_amr = ht.freq[ht.globals.freq_index_dict['gnomad_amr']].AF,
-            gnomad_asj = ht.freq[ht.globals.freq_index_dict['gnomad_asj']].AF,
-            gnomad_eas = ht.freq[ht.globals.freq_index_dict['gnomad_eas']].AF,
-            gnomad_fin = ht.freq[ht.globals.freq_index_dict['gnomad_fin']].AF,
-            gnomad_nfe = ht.freq[ht.globals.freq_index_dict['gnomad_nfe']].AF,
-            gnomad_nfe_est = ht.freq[ht.globals.freq_index_dict['gnomad_nfe_est']].AF,
-            gnomad_nfe_nwe = ht.freq[ht.globals.freq_index_dict['gnomad_nfe_nwe']].AF,
-            gnomad_nfe_onf = ht.freq[ht.globals.freq_index_dict['gnomad_nfe_onf']].AF,
-            gnomad_nfe_seu = ht.freq[ht.globals.freq_index_dict['gnomad_nfe_seu']].AF,
-            gnomad_oth = ht.freq[ht.globals.freq_index_dict['gnomad_oth']].AF
-        ),
-
-        # Minor allele freq
-        maf = ht.maf.annotate(
-            gnomad_afr = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_afr']].AF),
-            gnomad_amr = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_amr']].AF),
-            gnomad_asj = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_asj']].AF),
-            gnomad_eas = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_eas']].AF),
-            gnomad_fin = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_fin']].AF),
-            gnomad_nfe = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_nfe']].AF),
-            gnomad_nfe_est = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_nfe_est']].AF),
-            gnomad_nfe_nwe = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_nfe_nwe']].AF),
-            gnomad_nfe_onf = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_nfe_onf']].AF),
-            gnomad_nfe_seu = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_nfe_seu']].AF),
-            gnomad_oth = af_to_maf(ht.freq[ht.globals.freq_index_dict['gnomad_oth']].AF)
-        )
-
-    )
-
-    # Filter based on MAFs
-    ht = ht.filter(
-        (ht.maf.gnomad_afr >= maf_filter) |
-        (ht.maf.gnomad_amr >= maf_filter) |
-        (ht.maf.gnomad_asj >= maf_filter) |
-        (ht.maf.gnomad_eas >= maf_filter) |
-        (ht.maf.gnomad_fin >= maf_filter) |
-        (ht.maf.gnomad_nfe >= maf_filter) |
-        (ht.maf.gnomad_nfe_est >= maf_filter) |
-        (ht.maf.gnomad_nfe_nwe >= maf_filter) |
-        (ht.maf.gnomad_nfe_onf >= maf_filter) |
-        (ht.maf.gnomad_nfe_seu >= maf_filter) |
-        (ht.maf.gnomad_oth >= maf_filter)
-    )
-    print('Variants post-MAF filter: ', ht.count())
-
-    #
-    # Lift-over to GRCh38 ------------------------------------------------------
-    #
+    # Generate struct for alt. allele frequency in selected populations:
+    ht = ht.annotate(af=hl.struct(**{pop: ht.freq[index].AF for pop, index in population_indices.items()}))
 
     # Add chain file
-    rg37 = hl.get_reference('GRCh37')
-    rg38 = hl.get_reference('GRCh38')
-    rg37.add_liftover(chain_file, rg38)
+    grch37 = hl.get_reference('GRCh37')
+    grch38 = hl.get_reference('GRCh38')
+    grch38.add_liftover(chain_file, grch37)
 
     # Liftover
     ht = ht.annotate(
-        locus_GRCh38 = hl.liftover(ht.locus, 'GRCh38')
+        locus_GRCh37=hl.liftover(ht.locus, 'GRCh37')
     )
 
-    #
-    # Add CADD annotations -----------------------------------------------------
-    #
-
-    # Load CADD annotations
-    cadd = hl.read_table(cadd_table)
-
-    # Annotate gnomad with CADD
-    ht = ht.annotate(cadd = hl.struct())
+    # Adding build-specific coordinates to the table:
     ht = ht.annotate(
-        cadd = ht.cadd.annotate(
-            raw = cadd[ht.locus, ht.alleles].cadd_raw,
-            phred = cadd[ht.locus, ht.alleles].cadd_phred
-        )
+        chrom_b38=ht.locus.contig.replace('chr', ''),
+        pos_b38=ht.locus.position,
+        chrom_b37=ht.locus_GRCh37.contig.replace('chr', ''),
+        pos_b37=ht.locus_GRCh37.position,
+        ref=ht.alleles[0],
+        alt=ht.alleles[1],
+        allele_type=ht.allele_info.allele_type
     )
 
-    #
-    # Export required fields ---------------------------------------------------
-    #
-
-    # Split locus and alleles into separate fields
+    # Updating table:
     ht = ht.annotate(
-        chrom_b37 = ht.locus.contig,
-        pos_b37 = ht.locus.position,
-        chrom_b38 = ht.locus_GRCh38.contig.replace('chr', ''),
-        pos_b38 = ht.locus_GRCh38.position,
-        ref = ht.alleles[0],
-        alt = ht.alleles[1]
+        # Updating CADD column:
+        cadd=ht.cadd.rename({'raw_score': 'raw'}).drop('has_duplicate'),
+
+        # Adding locus as new column:
+        locus_GRCh38=ht.locus
     )
 
-    # Drop top level fields
-    ht = ht.drop(
-        # 'locus',
-        # 'locus_GRCh38',
-        # 'alleles',
-        'freq',
-        'age_hist_het',
-        'age_hist_hom',
-        'popmax',
-        'faf',
-        'lcr',
-        'decoy',
-        'segdup',
-        'nonpar',
-        'variant_type',
-        # 'allele_type',
-        'n_alt_alleles',
-        'was_mixed',
-        'has_star',
-        'qd',
-        'pab_max',
-        'info_MQRankSum',
-        'info_SOR',
-        'info_InbreedingCoeff',
-        'info_ReadPosRankSum',
-        'info_FS',
-        'info_QD',
-        'info_MQ',
-        'info_DP',
-        'transmitted_singleton',
-        'fail_hard_filters',
-        'info_POSITIVE_TRAIN_SITE',
-        'info_NEGATIVE_TRAIN_SITE',
-        'omni',
-        'mills',
-        'tp',
-        'rf_train',
-        'rf_label',
-        'rf_probability',
-        'rf_prediction',
-        'rank',
-        'was_split',
-        'singleton',
-        '_score',
-        '_singleton',
-        'biallelic_rank',
-        'singleton_rank',
-        'n_nonref',
-        'score',
-        'adj_biallelic_singleton_rank',
-        'adj_rank',
-        'adj_biallelic_rank',
-        'adj_singleton_rank',
-        'biallelic_singleton_rank',
-        'filters',
-        'gq_hist_alt',
-        'gq_hist_all',
-        'dp_hist_alt',
-        'dp_hist_all',
-        'ab_hist_alt',
-        'qual',
-        'allele_info',
-        'maf'
-    )
-
-    # Drop all globals
+    # Drop all global annotations:
     ht = ht.select_globals()
 
     # Drop unnecessary VEP fields
     ht = ht.annotate(
-        vep = ht.vep.drop(
+        vep=ht.vep.drop(
             'assembly_name',
             'allele_string',
             'ancestral',
-            'colocated_variants',
             'context',
             'end',
             'id',
@@ -247,56 +111,57 @@ def main():
     )
 
     # Sort columns
-    col_order = ['locus_GRCh38', 'chrom_b37', 'pos_b37', 'chrom_b38', 'pos_b38',
-                 'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd']
-    ht = ht.select(*col_order)
-
-    # Persist as writing twice would cause re-computation
-    ht = ht.persist()
+    col_order = [
+        'locus_GRCh38', 'chrom_b38', 'pos_b38',
+        'chrom_b37', 'pos_b37',
+        'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd'
+    ]
 
     # Repartition and write parquet file
     (
-        ht.to_spark(flatten=False)
-          .repartition(out_partitions)
-          .write.parquet(out_parquet)
+        ht
+        .select(*col_order)
+        .to_spark(flatten=False)
+        .coalesce(OUT_PARTITIONS)
+        .write.mode('overwrite').parquet(out_parquet)
     )
 
-    # Export site list
-    cols = ['chrom_b37', 'pos_b37', 'chrom_b38', 'pos_b38', 'ref', 'alt', 'rsid']
-    (
-        ht.select(*cols)
-          .export(out_sitelist)
-    )
-
-    return 0
-
-def parse_population_keys(pop_list):
-    ''' Takes a list of population names and filters to:
-        - Keep gnomad only
-        - Remove male/female sub-stats
-        - Remove _raw (stats before any sample filtering)
-    Params:
-        pop_list (list of str)
-    Returns:
-        Filtered pop_list (list of str)
-    '''
-    pop_filt = []
-    for pop in pop_list:
-        if (
-              pop.startswith('gnomad_') and not
-              pop.endswith('_raw') and not
-              pop.endswith('_male') and not
-              pop.endswith('_female')
-           ):
-           pop_filt.append(pop)
-    return pop_filt
-
-
-def af_to_maf(af):
-    ''' Convert allele freq to minor allele freq using hail conditional
-    '''
-    return hl.cond(af <= 0.5, af, 1 - af)
 
 if __name__ == '__main__':
 
-    main()
+    # Parsing command line arguments
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        description='This script generates variant table for OpenTargets Genetics pipelines.')
+    parser.add_argument('--gnomadFile', help='Hail table of the 3+ version of gnomAD dataset.',
+                        type=str, required=False, default=GNOMAD_3_TABLE)
+    parser.add_argument('--chainFile', help='GRCh38 -> GRCh37 liftover chain file.',
+                        type=str, required=False, default=CHAIN_FILE)
+    parser.add_argument('--outputFolder', help='Directory into which the output files will be saved.',
+                        type=str, required=True)
+    parser.add_argument('--test', help='Number of rows taken for testing and debug purposes',
+                        type=int, required=False)
+
+    args = parser.parse_args()
+
+    gnomad_file = args.gnomadFile if args.gnomadFile else GNOMAD_3_TABLE
+    chain_file = args.chainFile if args.chainFile else CHAIN_FILE
+    out_folder = args.outputFolder
+
+    # Initialize logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s %(module)s - %(funcName)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        stream=sys.stderr
+    )
+
+    # Report parametrs
+    logging.info(f'GnomAD file: {gnomad_file}')
+    logging.info(f'Chains file: {chain_file}')
+    logging.info(f'Chain file: {chain_file}')
+    logging.info(f'Output folder: {out_folder}')
+    if args.test:
+        logging.info(f'Test run. Number of variants taken: {args.test}')
+
+    main(gnomad_file, chain_file, out_folder, args.test)
