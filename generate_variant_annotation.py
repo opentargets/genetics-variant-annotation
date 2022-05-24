@@ -29,11 +29,6 @@ POPULATIONS = {
     'oth'   # Other
 }
 
-def af_to_maf(af):
-    """Converts AF to MAF. The resulting value is always <= 0.5."""
-    return hl.if_else(af <= 0.5, af, 1 - af)
-
-
 def main(gnomad_file, chain_file, out_folder, test=None):
 
     # Output files:
@@ -48,9 +43,6 @@ def main(gnomad_file, chain_file, out_folder, test=None):
 
     # Assert that all alleles are biallelic:
     assert ht.all(ht.alleles.length() == 2), 'Mono- or multiallelic variants have been found.'
-
-    # So we are filtering out all the variants that had failed any of the variant calling QC:
-    ht = ht.filter(ht.filters.length() == 0)
 
     # Extracting AF indices of populations:
     population_indices = ht.globals.freq_index_dict.collect()[0]
@@ -114,7 +106,7 @@ def main(gnomad_file, chain_file, out_folder, test=None):
     col_order = [
         'locus_GRCh38', 'chrom_b38', 'pos_b38',
         'chrom_b37', 'pos_b37',
-        'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd'
+        'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd', 'filters'
     ]
 
     # Repartition and write parquet file
