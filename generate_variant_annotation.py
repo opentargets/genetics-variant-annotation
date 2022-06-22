@@ -2,6 +2,8 @@ import argparse
 import logging
 import sys
 
+import pyspark.sql.functions as f
+
 import hail as hl
 from hail.expr.functions import allele_type
 
@@ -29,10 +31,7 @@ POPULATIONS = {
     'oth'   # Other
 }
 
-def main(gnomad_file, chain_file, out_folder, test=None):
-
-    # Output files:
-    out_parquet = f'{out_folder}/variant-annotation.parquet'
+def main(gnomad_file, chain_file, out_parquet, test=None):
 
     # Load data
     ht = hl.read_table(gnomad_file)
@@ -109,13 +108,51 @@ def main(gnomad_file, chain_file, out_folder, test=None):
         'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd', 'filters'
     ]
 
-    # Repartition and write parquet file
+    # Convert data:
+    variants = (
+        # Select columns and convert to pyspark:
+        ht.select(*col_order).to_spark(flatten=False)
+
+        # Adding new column:
+        .withColumn('chr', f.col('chrom_b38'))
+    )
+
+    # Extract canonical consequences:
+    canonical_transcripts = (
+        variants
+        .select('chrom_b38', 'pos_b38', 'ref', 'alt', f.explode('vep.transcript_consequences').alias('col'))
+        .filter(f.col('col.canonical') == True)
+        .groupby('chrom_b38', 'pos_b38', 'ref', 'alt')
+        .agg(f.collect_list(f.col('col')).alias('transcript_consequences'))
+    )
+
+    # Updaing VEP object and save data:
     (
-        ht
-        .select(*col_order)
-        .to_spark(flatten=False)
-        .coalesce(OUT_PARTITIONS)
-        .write.mode('overwrite').parquet(out_parquet)
+        variants
+
+        # Joining with canonical transcript consequences:
+        .join(canonical_transcripts, on=['chrom_b38', 'pos_b38', 'ref', 'alt'], how='left')
+
+        # Re-creating the vep column with the new transcript consequence object:
+        .withColumn(
+            'vep',
+            f.struct(
+                f.col('vep.most_severe_consequence').alias('most_severe_consequence'),
+                f.col('vep.motif_feature_consequences').alias('motif_feature_consequences'),
+                f.col('vep.regulatory_feature_consequences').alias('regulatory_feature_consequences'),
+                f.col('transcript_consequences').alias('transcript_consequences')
+            )
+        )
+        # Adding new column:
+        .withColumn('chr', f.col('chrom_b38'))
+
+        # Drop unused column:
+        .drop('transcript_consequences')
+
+        # Writing data partitioned by chromosome:
+        .write.mode('overwrite')
+        .partitionBy('chr')
+        .parquet(out_parquet)
     )
 
 
