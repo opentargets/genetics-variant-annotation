@@ -1,13 +1,14 @@
-Variant annotation pipeline
-===========================
+# Variant annotation pipeline
 
-Workflow to produce variant index for Open Targets Genetics.
+Workflow to produce variant annotation dataset for Open Targets Genetics Portal. The dataset is derived from the GnomAD 3.1 release, whith some modification. This dataset is used to generate annotation for all the variants the Portal has association information on. Also the variant index is derived from this dataset.
+
+In this release of the variant annotation pipeline there is no allele frequency or variant call quality filter.
 
 Steps:
-- Filters to remove low frequency variants (keep variant if MAF > 0.1% in any population)
-- Removes variants that fail [hard or soft filters](https://macarthurlab.org/2018/10/17/gnomad-v2-1/)
-- Lifts over to GRCh37
-- Keep VEP annotations including regulatory and motif features
+
+- Lifts over to GRCh37 for historic reason.
+- Keep VEP annotations including regulatory, motif features and transcript features.
+- Transcript consequences are filtered for only canonical transcipts.
 
 ## Usage
 
@@ -15,9 +16,9 @@ For detailed description and the applied defaults of the script, please run `gen
 
 ### Start dataproc spark server
 
-The dataproc cluster is single node, high-mem, with the most recent version of hail (`v.0.2.77`) as of 2021-10-05. 
+The dataproc cluster is single node, high-mem, with the most recent version of hail (`v.0.2.77`) as of 2021-10-05.
 
-```
+```bash
 gcloud dataproc clusters create hail-test-single \
     --image-version=2.0.6-debian10 \
     --properties="^|||^spark:spark.task.maxFailures=20|||spark:spark.driver.extraJavaOptions=-Xss4M|||spark:spark.executor.extraJavaOptions=-Xss4M|||hdfs:dfs.replication=1|||spark:spark.driver.memory=1146g" \
@@ -36,7 +37,7 @@ gcloud dataproc clusters create hail-test-single \
 
 ### Submit job to dataproc server
 
-```
+```bash
 CLUSTER="hail-test-single"
 PROJECT="open-targets-genetics-dev"
 REGION="europe-west1"
@@ -51,7 +52,8 @@ gcloud dataproc jobs submit pyspark \
 ```
 
 ## Output schema
-```
+
+```schema
 root
  |-- locus: struct (nullable = true)
  |    |-- contig: string (nullable = true)
