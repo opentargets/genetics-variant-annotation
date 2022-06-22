@@ -109,29 +109,12 @@ def main(gnomad_file, chain_file, out_parquet, test=None):
     ]
 
     # Convert data:
-    variants = (
+    (
         # Select columns and convert to pyspark:
         ht.select(*col_order).to_spark(flatten=False)
 
-        # Adding new column:
-        .withColumn('chr', f.col('chrom_b38'))
-    )
-
-    # Extract canonical consequences:
-    canonical_transcripts = (
-        variants
-        .select('chrom_b38', 'pos_b38', 'ref', 'alt', f.explode('vep.transcript_consequences').alias('col'))
-        .filter(f.col('col.canonical') == True)
-        .groupby('chrom_b38', 'pos_b38', 'ref', 'alt')
-        .agg(f.collect_list(f.col('col')).alias('transcript_consequences'))
-    )
-
-    # Updaing VEP object and save data:
-    (
-        variants
-
-        # Joining with canonical transcript consequences:
-        .join(canonical_transcripts, on=['chrom_b38', 'pos_b38', 'ref', 'alt'], how='left')
+        # Creating new column based on the transcript_consequences
+        .select("*", f.expr("filter(vep.transcript_consequences, array -> array.canonical == True)").alias("transcript_consequences"))
 
         # Re-creating the vep column with the new transcript consequence object:
         .withColumn(
@@ -143,18 +126,18 @@ def main(gnomad_file, chain_file, out_parquet, test=None):
                 f.col('transcript_consequences').alias('transcript_consequences')
             )
         )
-        # Adding new column:
-        .withColumn('chr', f.col('chrom_b38'))
 
         # Drop unused column:
         .drop('transcript_consequences')
+
+        # Adding new column:
+        .withColumn('chr', f.col('chrom_b38'))
 
         # Writing data partitioned by chromosome:
         .write.mode('overwrite')
         .partitionBy('chr')
         .parquet(out_parquet)
     )
-
 
 if __name__ == '__main__':
 
