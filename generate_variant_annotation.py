@@ -2,6 +2,8 @@ import argparse
 import logging
 import sys
 
+import pyspark.sql.functions as f
+
 import hail as hl
 from hail.expr.functions import allele_type
 
@@ -29,10 +31,7 @@ POPULATIONS = {
     'oth'   # Other
 }
 
-def main(gnomad_file, chain_file, out_folder, test=None):
-
-    # Output files:
-    out_parquet = f'{out_folder}/variant-annotation.parquet'
+def main(gnomad_file, chain_file, out_parquet, test=None):
 
     # Load data
     ht = hl.read_table(gnomad_file)
@@ -109,15 +108,36 @@ def main(gnomad_file, chain_file, out_folder, test=None):
         'ref', 'alt', 'allele_type', 'vep', 'rsid', 'af', 'cadd', 'filters'
     ]
 
-    # Repartition and write parquet file
+    # Convert data:
     (
-        ht
-        .select(*col_order)
-        .to_spark(flatten=False)
-        .coalesce(OUT_PARTITIONS)
-        .write.mode('overwrite').parquet(out_parquet)
-    )
+        # Select columns and convert to pyspark:
+        ht.select(*col_order).to_spark(flatten=False)
 
+        # Creating new column based on the transcript_consequences
+        .select("*", f.expr("filter(vep.transcript_consequences, array -> array.canonical == True)").alias("transcript_consequences"))
+
+        # Re-creating the vep column with the new transcript consequence object:
+        .withColumn(
+            'vep',
+            f.struct(
+                f.col('vep.most_severe_consequence').alias('most_severe_consequence'),
+                f.col('vep.motif_feature_consequences').alias('motif_feature_consequences'),
+                f.col('vep.regulatory_feature_consequences').alias('regulatory_feature_consequences'),
+                f.col('transcript_consequences').alias('transcript_consequences')
+            )
+        )
+
+        # Drop unused column:
+        .drop('transcript_consequences')
+
+        # Adding new column:
+        .withColumn('chr', f.col('chrom_b38'))
+
+        # Writing data partitioned by chromosome:
+        .write.mode('overwrite')
+        .partitionBy('chr')
+        .parquet(out_parquet)
+    )
 
 if __name__ == '__main__':
 
