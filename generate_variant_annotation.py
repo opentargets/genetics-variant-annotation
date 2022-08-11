@@ -127,6 +127,9 @@ def main(gnomad_file, chain_file, out_parquet, test=None):
             )
         )
 
+        # Generate variant id column:
+        .withColumn('id', f.concat_ws('_', 'chrom_b38', 'pos_b38', 'ref', 'alt'))
+
         # Drop unused column:
         .drop('transcript_consequences')
 
